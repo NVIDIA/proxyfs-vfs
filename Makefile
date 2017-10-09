@@ -6,7 +6,7 @@ LDSHFLAGS    = -shared
 
 ifneq ($(MAKECMDGOALS),clean)
 ifndef SAMBA_PATH
-$(error SAMBA_PATH must be set to samba source directory)
+SAMBA_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))/samba
 endif
 include $(SAMBA_PATH)/VERSION
 FLAGS = $(CFLAGS) -I$(SAMBA_PATH) -I$(SAMBA_PATH)/source3 -I$(SAMBA_PATH)/source3/include -I$(SAMBA_PATH)/lib/talloc -I$(SAMBA_PATH)/lib/tevent -I$(SAMBA_PATH)/lib/replace -I$(SAMBA_PATH)/bin/default -I$(SAMBA_PATH)/bin/default/include -I.
