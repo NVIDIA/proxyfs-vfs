@@ -16,6 +16,7 @@
  * available in rpc calls to ProxyFS.
  */
 
+#include <stdlib.h> // TODO: Remove this per below
 #include <stdio.h>
 #include <libgen.h>
 #include <fcntl.h>
@@ -47,6 +48,10 @@
 
 #undef DBGC_CLASS
 #define DBGC_CLASS DBGC_VFS
+
+const char*vfs_proxyfs_PrivateIPAddr; // [global]proxyfs:PrivateIPAddr
+int vfs_proxyfs_TCPPort;              // [global]proxyfs:TCPPort
+int vfs_proxyfs_FastTCPPort;          // [global]proxyfs:FastTCPPort
 
 char *resolve_path(struct vfs_handle_struct *handle,
                           const char *path)
@@ -2794,5 +2799,48 @@ static struct vfs_fn_pointers proxyfs_fns = {
 NTSTATUS vfs_proxyfs_init(void);
 NTSTATUS vfs_proxyfs_init(void)
 {
+	vfs_proxyfs_PrivateIPAddr = lp_parm_const_string(-1,"proxyfs","PrivateIPAddr","<missing>");
+	vfs_proxyfs_TCPPort       = lp_parm_int(-1,"proxyfs","TCPPort",0);
+	vfs_proxyfs_FastTCPPort   = lp_parm_int(-1,"proxyfs","FastTCPPort",0);
+
+	// TODO: Replace below here once SSController populates smb.conf (and above annotated #include's)
+
+	if (0 == vfs_proxyfs_TCPPort) {
+		FILE *rpc_config_file;
+		long rpc_config_file_len;
+		char *rpc_config_str;
+		size_t fread_ret;
+		rpc_config_file = fopen("/tmp/rpc_server.conf", "r");
+		if (NULL == rpc_config_file) {
+			printf("fopen(\"/tmp/rpc_server.conf\") failed\n");
+			exit(-1);
+		}
+		if (0 != fseek(rpc_config_file, 0, SEEK_END)) {
+			printf("fseek(,,SEEK_END) failed\n");
+			exit(-2);
+		}
+		rpc_config_file_len = ftell(rpc_config_file);
+		rewind(rpc_config_file);
+		rpc_config_str = (char *)malloc(rpc_config_file_len);
+		if (NULL == rpc_config_str) {
+			printf("malloc(rpc_config_file_len == %d) failed\n", rpc_config_file_len);
+			exit(-3);
+		}
+		fread_ret = fread(rpc_config_str, 1, (rpc_config_file_len - 1), rpc_config_file);
+		if (fread_ret != (rpc_config_file_len - 1)) {
+			printf("fread() failed... rpc_config_file_len == %d fread_ret == %d\n", rpc_config_file_len, fread_ret);
+			exit(-4);
+		}
+		rpc_config_str[(rpc_config_file_len - 1)] = '\0';
+		rpc_config_parse(rpc_config_str);
+		free(rpc_config_str);
+	} else {
+		rpc_config_set(vfs_proxyfs_PrivateIPAddr, vfs_proxyfs_TCPPort, vfs_proxyfs_FastTCPPort);
+	}
+
+	// TODO: Replace above here once SSController populates smb.conf with
+
+	//rpc_config_set(vfs_proxyfs_PrivateIPAddr, vfs_proxyfs_TCPPort, vfs_proxyfs_FastTCPPort);
+
 	return smb_register_vfs(SMB_VFS_INTERFACE_VERSION, "proxyfs", &proxyfs_fns);
 }
