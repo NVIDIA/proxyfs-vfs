@@ -355,7 +355,7 @@ static int vfs_proxyfs_statvfs(struct vfs_handle_struct *handle,
 	vfs_statvfs->TotalFileNodes = stat_vfs->f_files;
 	vfs_statvfs->FreeFileNodes = stat_vfs->f_ffree;
 	vfs_statvfs->FsIdentifier = stat_vfs->f_fsid;
-	vfs_statvfs->FsCapabilities = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS;
+	vfs_statvfs->FsCapabilities = FILE_CASE_PRESERVED_NAMES;
 
     free(stat_vfs);
 
@@ -368,7 +368,7 @@ static uint32_t vfs_proxyfs_fs_capabilities(struct vfs_handle_struct *handle,
                                             enum timestamp_set_resolution *p_ts_res)
 {
 	DEBUG(10, ("vfs_proxyfs_fs_capabilities: %s\n", handle->conn->connectpath));
-	uint32_t caps = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS;
+	uint32_t caps = FILE_CASE_PRESERVED_NAMES;
 
 #ifdef STAT_HAVE_NSEC
 	*p_ts_res = TIMESTAMP_SET_NT_OR_BETTER;
