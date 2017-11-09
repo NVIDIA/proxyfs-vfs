@@ -1937,7 +1937,7 @@ static int vfs_proxyfs_get_real_filename(struct vfs_handle_struct *handle,
 		return -1;
 	}
 
-	if ((strlen(path) + strlen(name) + 1) > PATH_MAX) {
+	if ((strlen(path) + strlen(name) + 2) > PATH_MAX) {
 		errno = ENAMETOOLONG;
 		return -1;
 	}
