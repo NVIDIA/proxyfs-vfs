@@ -355,7 +355,7 @@ static int vfs_proxyfs_statvfs(struct vfs_handle_struct *handle,
 	vfs_statvfs->TotalFileNodes = stat_vfs->f_files;
 	vfs_statvfs->FreeFileNodes = stat_vfs->f_ffree;
 	vfs_statvfs->FsIdentifier = stat_vfs->f_fsid;
-	vfs_statvfs->FsCapabilities = FILE_CASE_PRESERVED_NAMES;
+	vfs_statvfs->FsCapabilities = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES;
 
     free(stat_vfs);
 
@@ -368,7 +368,7 @@ static uint32_t vfs_proxyfs_fs_capabilities(struct vfs_handle_struct *handle,
                                             enum timestamp_set_resolution *p_ts_res)
 {
 	DEBUG(10, ("vfs_proxyfs_fs_capabilities: %s\n", handle->conn->connectpath));
-	uint32_t caps = FILE_CASE_PRESERVED_NAMES;
+	uint32_t caps = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES;
 
 #ifdef STAT_HAVE_NSEC
 	*p_ts_res = TIMESTAMP_SET_NT_OR_BETTER;
@@ -1931,9 +1931,35 @@ static int vfs_proxyfs_get_real_filename(struct vfs_handle_struct *handle,
                                          TALLOC_CTX *mem_ctx, char **found_name)
 {
 	DEBUG(10, ("vfs_proxyfs_get_real_filename: %s\n", path));
-	errno = ENOTSUP;
-	return -1;
 
+	if (strlen(name) >= NAME_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+
+	if ((strlen(path) + strlen(name) + 2) > PATH_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+
+	char full_path[PATH_MAX];
+	snprintf(full_path, PATH_MAX, "%s/%s", path, name);
+	char *rpath = resolve_path(handle, full_path);
+	uint64_t ino;
+
+	int err = proxyfs_lookup_path(MOUNT_HANDLE(handle), rpath, &ino);
+	free(rpath);
+	if (err == -1) {
+		return -1;
+	}
+
+	*found_name = talloc_strdup(mem_ctx, name);
+	if (found_name[0] == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	return 0;
 }
 
 static const char *vfs_proxyfs_connectpath(struct vfs_handle_struct *handle,
