@@ -20,4 +20,7 @@
       level2 oplocks = False
       aio read size = 1
       aio write size = 1
+      case sensitive = yes
+      preserve case = yes
+      short preserve case = yes
 
