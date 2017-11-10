@@ -448,12 +448,15 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	bool are_more_entries;
 	proxyfs_stat_t *stats;
 
+	// dirp->offset field indicates the "next" offset... ProxyFS wants the "current" offset
+	int64_t prev_dir_location = (int64_t)(dir->offset) - 1;
+
 	if (sbuf != NULL) {
 		DEBUG(10, ("Invoking proxyfs_readdir_plus for inum = %ld\n", dir->inum));
-		ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, dir->offset, &dir_ent, &stats);
+		ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, prev_dir_location, &dir_ent, &stats);
 	} else {
 		DEBUG(10, ("Invoking proxyfs_readdir for inum = %ld\n", dir->inum));
-		ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, dir->offset, &dir_ent);
+		ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, prev_dir_location, &dir_ent);
 	}
 
 	if ((ret != 0) || (dir_ent == NULL)) {
