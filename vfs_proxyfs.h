@@ -15,6 +15,7 @@ typedef struct {
 typedef struct file_handle_s {
 	uint64_t      inum;
 	off_t         offset;
+	bool		  use_name;  // Use last returned name as the marker for readdir otherwise offset will be used.
 	uint64_t      flags;
 	uint64_t      mode;
 	struct dirent dir_ent;

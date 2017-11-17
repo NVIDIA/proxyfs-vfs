@@ -412,7 +412,6 @@ static DIR *vfs_proxyfs_opendir(struct vfs_handle_struct *handle,
 		return NULL;
 	}
 
-	dir->offset = -1;
 	free(path);
 
 	return (DIR *) dir;
@@ -448,12 +447,28 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	bool are_more_entries;
 	proxyfs_stat_t *stats;
 
+	char *prev_name_marker = NULL;
+
 	if (sbuf != NULL) {
 		DEBUG(10, ("Invoking proxyfs_readdir_plus for inum = %ld\n", dir->inum));
-		ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, dir->offset, &dir_ent, &stats);
+		if (dir->use_name) {
+			ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, (char *)dir->dir_ent.d_name, &dir_ent, &stats);
+		} else {
+			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
+			// It assumes dirent.d_off to be the offset to next entry in the volume, instead as per readdir(3) it is to
+			// the current entry.
+			ret = proxyfs_readdir_plus_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent, &stats);
+		}
 	} else {
 		DEBUG(10, ("Invoking proxyfs_readdir for inum = %ld\n", dir->inum));
-		ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, dir->offset, &dir_ent);
+		if (dir->use_name) {
+			ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, (char *)dir->dir_ent.d_name, &dir_ent);
+		} else {
+			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
+			// It assumes dirent.d_off to be the offset to next entry in the volume, instead as per readdir(3) it is to
+			// the current entry.
+			ret = proxyfs_readdir_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent);
+		}
 	}
 
 	if ((ret != 0) || (dir_ent == NULL)) {
@@ -461,6 +476,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 		return NULL;
 	}
 
+	dir->use_name = true; // Since we have the name in hand, we will use it as the marker.
 	memcpy(&dir->dir_ent, dir_ent, sizeof(struct dirent));
 	free(dir_ent);
 
@@ -480,6 +496,7 @@ static void vfs_proxyfs_seekdir(struct vfs_handle_struct *handle,
 	DEBUG(10, ("vfs_proxyfs_seekdir: %s\n", handle->conn->connectpath));
 	file_handle_t *dir = (file_handle_t *)dirp;
 	dir->offset = offset;
+	dir->use_name = false; // Subsequent readdir should use offset instead of name as next entry marker.
 }
 
 static long vfs_proxyfs_telldir(struct vfs_handle_struct *handle, DIR *dirp)
@@ -495,6 +512,7 @@ static void vfs_proxyfs_rewinddir(struct vfs_handle_struct *handle,
 	DEBUG(10, ("vfs_proxyfs_rewinddir: %s\n", handle->conn->connectpath));
 	file_handle_t *dir = (file_handle_t *)dirp;
 	dir->offset = 0;
+	dir->use_name = false; // Subsequent readdir should use offset instead of name as the next entry marker.
 }
 
 static int vfs_proxyfs_mkdir(struct vfs_handle_struct *handle,
