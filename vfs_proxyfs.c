@@ -177,14 +177,14 @@ static void smb_stat_ex_from_stat(struct stat_ex *dst,
 	dst->st_ex_atime.tv_sec = src->atim.sec;
 	dst->st_ex_mtime.tv_sec = src->mtim.sec;
 	dst->st_ex_ctime.tv_sec = src->ctim.sec;
-	dst->st_ex_btime.tv_sec = src->mtim.sec;  // TBD: should map to cr or b time.
+	dst->st_ex_btime.tv_sec = src->crtim.sec;
 	dst->st_ex_blksize = 65536;
 	dst->st_ex_blocks = src->size / 512;
 #ifdef STAT_HAVE_NSEC
 	dst->st_ex_atime.tv_nsec = src->atim.nsec;
 	dst->st_ex_mtime.tv_nsec = src->mtim.nsec;
 	dst->st_ex_ctime.tv_nsec = src->ctim.nsec;
-	dst->st_ex_btime.tv_nsec = src->mtim.nsec; // TBD: should map to cr or b time.
+	dst->st_ex_btime.tv_nsec = src->crtim.nsec;
 #endif
 }
 
@@ -1241,7 +1241,7 @@ static int vfs_proxyfs_fsync_recv_4_4(struct tevent_req *req,
 }
 #endif
 
-// TBD: How do we handle stat of symbolic link. Currently we are not resolving 
+// TBD: How do we handle stat of symbolic link. Currently we are not resolving
 // symlink inode to target inode and then doing stat on it. stat behavior is same as
 // lstat behavior for symbolic link.
 
