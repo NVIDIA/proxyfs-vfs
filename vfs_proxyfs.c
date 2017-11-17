@@ -469,6 +469,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 			// the current entry.
 			ret = proxyfs_readdir_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent);
 		}
+
 	}
 
 	if ((ret != 0) || (dir_ent == NULL)) {
