@@ -455,8 +455,6 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 			ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, (char *)dir->dir_ent.d_name, &dir_ent, &stats);
 		} else {
 			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
-			// It assumes dirent.d_off to be the offset to next entry in the volume, instead as per readdir(3) it is to
-			// the current entry.
 			ret = proxyfs_readdir_plus_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent, &stats);
 		}
 	} else {
@@ -465,8 +463,6 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 			ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, (char *)dir->dir_ent.d_name, &dir_ent);
 		} else {
 			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
-			// It assumes dirent.d_off to be the offset to next entry in the volume, instead as per readdir(3) it is to
-			// the current entry.
 			ret = proxyfs_readdir_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent);
 		}
 
