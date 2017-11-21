@@ -441,7 +441,7 @@ static DIR *vfs_proxyfs_fdopendir(struct vfs_handle_struct *handle,
  *
  * Note on next direntry pointer:
  * In proxyfs we use last read name as the marker instead of the corresponding dirent.d_off. Because, the internal
- * directory btree key is name (offset is just hte location of the entry in the directory at the time of making the call).
+ * directory btree key is name (offset is just the location of the entry in the directory at the time of making the call).
  * Therefore, if files are deleted then offet corresponding to a name could change, leading to inconsistency if we use it
  * as a marker.
  */
@@ -522,7 +522,7 @@ static void vfs_proxyfs_seekdir(struct vfs_handle_struct *handle,
 		// using offset as the marker, this could lead to inconsistency if files were deleted in the directory
 		// after getting the offset from telldir().
 		// This should not happen in case of samba requests!
-		DEBUG(3, ("vfs_proxyfs_seekdir: %s offset : %ld seekign to a location we are not trakcing by name, could lead to readdir inconsistency\n", handle->conn->connectpath, offset));
+		DEBUG(3, ("vfs_proxyfs_seekdir: %s offset : %ld seeking to a location we are not tracking by name, could lead to readdir inconsistency\n", handle->conn->connectpath, offset));
 		dir->offset = offset;
 		dir->use_name = false;
 	}
