@@ -435,6 +435,16 @@ static DIR *vfs_proxyfs_fdopendir(struct vfs_handle_struct *handle,
 	return (DIR *) *(file_handle_t **)VFS_FETCH_FSP_EXTENSION(handle, fsp);
 }
 
+/*
+ * The readdir() function returns a pointer to a dirent structure representing the next directory entry
+ * in the directory stream pointed to by dirp.
+ *
+ * Note on next direntry pointer:
+ * In proxyfs we use last read name as the marker instead of the corresponding dirent.d_off. Because, the internal
+ * directory btree key is name (offset is just hte location of the entry in the directory at the time of making the call).
+ * Therefore, if files are deleted then offet corresponding to a name could change, leading to inconsistency if we use it
+ * as a marker.
+ */
 static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
                                           DIR *dirp,
                                           SMB_STRUCT_STAT *sbuf)
@@ -452,7 +462,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	if (sbuf != NULL) {
 		DEBUG(10, ("Invoking proxyfs_readdir_plus for inum = %ld\n", dir->inum));
 		if (dir->use_name) {
-			ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, (char *)dir->dir_ent.d_name, &dir_ent, &stats);
+			ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, (char *)dir->prev_readdir_name, &dir_ent, &stats);
 		} else {
 			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
 			ret = proxyfs_readdir_plus_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent, &stats);
@@ -460,7 +470,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	} else {
 		DEBUG(10, ("Invoking proxyfs_readdir for inum = %ld\n", dir->inum));
 		if (dir->use_name) {
-			ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, (char *)dir->dir_ent.d_name, &dir_ent);
+			ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, (char *)dir->prev_readdir_name, &dir_ent);
 		} else {
 			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
 			ret = proxyfs_readdir_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent);
@@ -474,6 +484,7 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	}
 
 	dir->use_name = true; // Since we have the name in hand, we will use it as the marker.
+	dir->prev_readdir_name = (char *)dir->dir_ent.d_name;
 	memcpy(&dir->dir_ent, dir_ent, sizeof(struct dirent));
 	free(dir_ent);
 
@@ -486,20 +497,58 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	return &dir->dir_ent;
 }
 
+/*
+ * The  seekdir()  function  sets the location in the directory stream from which the next readdir call will start.
+ * The loc argument should be a value returned by a previous call to telldir.
+ *
+ */
 static void vfs_proxyfs_seekdir(struct vfs_handle_struct *handle,
                                 DIR *dirp,
                                 long offset)
 {
-	DEBUG(10, ("vfs_proxyfs_seekdir: %s\n", handle->conn->connectpath));
+	DEBUG(10, ("vfs_proxyfs_seekdir: %s offset : %ld \n", handle->conn->connectpath, offset));
 	file_handle_t *dir = (file_handle_t *)dirp;
-	dir->offset = offset;
-	dir->use_name = false; // Subsequent readdir should use offset instead of name as next entry marker.
+
+	if (offset == dir->telldir_info[0].offset) {
+		dir->offset = offset;
+		dir->use_name = dir->telldir_info[0].use_name;
+		dir->prev_readdir_name = dir->telldir_info[0].name;
+	} else if (offset == dir->telldir_info[1].offset) {
+		dir->offset = offset;
+		dir->use_name = dir->telldir_info[1].use_name;
+		dir->prev_readdir_name = dir->telldir_info[1].name;
+	} else {
+		// We are seeking to a location for which we don't have corresponding name, we fall back to
+		// using offset as the marker, this could lead to inconsistency if files were deleted in the directory
+		// after getting the offset from telldir().
+		// This should not happen in case of samba requests!
+		DEBUG(3, ("vfs_proxyfs_seekdir: %s offset : %ld seekign to a location we are not trakcing by name, could lead to readdir inconsistency\n", handle->conn->connectpath, offset));
+		dir->offset = offset;
+		dir->use_name = false;
+	}
 }
 
+/*
+ * The telldir() function returns the current location associated with the directory stream dirp.
+ *
+ * To follow posix description properly, we are supposed to maintain the readdir marker associated
+ * with every telldir offset we replied. So that a seekdir() to any of the previously returned telldir()
+ * location can properly be handled.
+ *
+ * Samba gets directory query info with a buffer to fill. Samba continuously reads on entry at a time and
+ * adds it to the buffer. When it encounters an entry that overflows the buffer, then samba will reply back
+ * to the query request and seekdir() back one entry so that the last read entry which could not be filled
+ * into the buffer will be re-read again for the subsequent request.
+ */
 static long vfs_proxyfs_telldir(struct vfs_handle_struct *handle, DIR *dirp)
 {
 	DEBUG(10, ("vfs_proxyfs_telldir: %s\n", handle->conn->connectpath));
 	file_handle_t *dir = (file_handle_t *)dirp;
+	dir->telldir_info[0] = dir->telldir_info[1];
+	strncpy(dir->telldir_info[1].name, dir->dir_ent.d_name, NAME_MAX);
+	dir->telldir_info[1].offset = dir->offset;
+	dir->telldir_info[1].use_name = dir->use_name;
+
 	return dir->offset;
 }
 
