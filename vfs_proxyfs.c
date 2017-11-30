@@ -177,14 +177,14 @@ static void smb_stat_ex_from_stat(struct stat_ex *dst,
 	dst->st_ex_atime.tv_sec = src->atim.sec;
 	dst->st_ex_mtime.tv_sec = src->mtim.sec;
 	dst->st_ex_ctime.tv_sec = src->ctim.sec;
-	dst->st_ex_btime.tv_sec = src->mtim.sec;  // TBD: should map to cr or b time.
+	dst->st_ex_btime.tv_sec = src->crtim.sec;
 	dst->st_ex_blksize = 65536;
 	dst->st_ex_blocks = src->size / 512;
 #ifdef STAT_HAVE_NSEC
 	dst->st_ex_atime.tv_nsec = src->atim.nsec;
 	dst->st_ex_mtime.tv_nsec = src->mtim.nsec;
 	dst->st_ex_ctime.tv_nsec = src->ctim.nsec;
-	dst->st_ex_btime.tv_nsec = src->mtim.nsec; // TBD: should map to cr or b time.
+	dst->st_ex_btime.tv_nsec = src->crtim.nsec;
 #endif
 }
 
@@ -355,7 +355,7 @@ static int vfs_proxyfs_statvfs(struct vfs_handle_struct *handle,
 	vfs_statvfs->TotalFileNodes = stat_vfs->f_files;
 	vfs_statvfs->FreeFileNodes = stat_vfs->f_ffree;
 	vfs_statvfs->FsIdentifier = stat_vfs->f_fsid;
-	vfs_statvfs->FsCapabilities = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS;
+	vfs_statvfs->FsCapabilities = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES;
 
     free(stat_vfs);
 
@@ -368,7 +368,7 @@ static uint32_t vfs_proxyfs_fs_capabilities(struct vfs_handle_struct *handle,
                                             enum timestamp_set_resolution *p_ts_res)
 {
 	DEBUG(10, ("vfs_proxyfs_fs_capabilities: %s\n", handle->conn->connectpath));
-	uint32_t caps = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES | FILE_SUPPORTS_REPARSE_POINTS;
+	uint32_t caps = FILE_CASE_SENSITIVE_SEARCH | FILE_CASE_PRESERVED_NAMES;
 
 #ifdef STAT_HAVE_NSEC
 	*p_ts_res = TIMESTAMP_SET_NT_OR_BETTER;
@@ -412,7 +412,6 @@ static DIR *vfs_proxyfs_opendir(struct vfs_handle_struct *handle,
 		return NULL;
 	}
 
-	dir->offset = -1;
 	free(path);
 
 	return (DIR *) dir;
@@ -436,6 +435,16 @@ static DIR *vfs_proxyfs_fdopendir(struct vfs_handle_struct *handle,
 	return (DIR *) *(file_handle_t **)VFS_FETCH_FSP_EXTENSION(handle, fsp);
 }
 
+/*
+ * The readdir() function returns a pointer to a dirent structure representing the next directory entry
+ * in the directory stream pointed to by dirp.
+ *
+ * Note on next direntry pointer:
+ * In proxyfs we use last read name as the marker instead of the corresponding dirent.d_off. Because, the internal
+ * directory btree key is name (offset is just the location of the entry in the directory at the time of making the call).
+ * Therefore, if files are deleted then offet corresponding to a name could change, leading to inconsistency if we use it
+ * as a marker.
+ */
 static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
                                           DIR *dirp,
                                           SMB_STRUCT_STAT *sbuf)
@@ -448,12 +457,25 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	bool are_more_entries;
 	proxyfs_stat_t *stats;
 
+	char *prev_name_marker = NULL;
+
 	if (sbuf != NULL) {
 		DEBUG(10, ("Invoking proxyfs_readdir_plus for inum = %ld\n", dir->inum));
-		ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, dir->offset, &dir_ent, &stats);
+		if (dir->use_name) {
+			ret = proxyfs_readdir_plus(MOUNT_HANDLE(handle), dir->inum, (char *)dir->prev_readdir_name, &dir_ent, &stats);
+		} else {
+			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
+			ret = proxyfs_readdir_plus_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent, &stats);
+		}
 	} else {
 		DEBUG(10, ("Invoking proxyfs_readdir for inum = %ld\n", dir->inum));
-		ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, dir->offset, &dir_ent);
+		if (dir->use_name) {
+			ret = proxyfs_readdir(MOUNT_HANDLE(handle), dir->inum, (char *)dir->prev_readdir_name, &dir_ent);
+		} else {
+			// TODO: ProxyFS wants the offset to be previous to the one returned to work correctly. This needs to be fixed!!
+			ret = proxyfs_readdir_by_loc(MOUNT_HANDLE(handle), dir->inum, dir->offset - 1, &dir_ent);
+		}
+
 	}
 
 	if ((ret != 0) || (dir_ent == NULL)) {
@@ -461,6 +483,8 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 		return NULL;
 	}
 
+	dir->use_name = true; // Since we have the name in hand, we will use it as the marker.
+	dir->prev_readdir_name = (char *)dir->dir_ent.d_name;
 	memcpy(&dir->dir_ent, dir_ent, sizeof(struct dirent));
 	free(dir_ent);
 
@@ -473,19 +497,58 @@ static struct dirent *vfs_proxyfs_readdir(struct vfs_handle_struct *handle,
 	return &dir->dir_ent;
 }
 
+/*
+ * The  seekdir()  function  sets the location in the directory stream from which the next readdir call will start.
+ * The loc argument should be a value returned by a previous call to telldir.
+ *
+ */
 static void vfs_proxyfs_seekdir(struct vfs_handle_struct *handle,
                                 DIR *dirp,
                                 long offset)
 {
-	DEBUG(10, ("vfs_proxyfs_seekdir: %s\n", handle->conn->connectpath));
+	DEBUG(10, ("vfs_proxyfs_seekdir: %s offset : %ld \n", handle->conn->connectpath, offset));
 	file_handle_t *dir = (file_handle_t *)dirp;
-	dir->offset = offset;
+
+	if (offset == dir->telldir_info[0].offset) {
+		dir->offset = offset;
+		dir->use_name = dir->telldir_info[0].use_name;
+		dir->prev_readdir_name = dir->telldir_info[0].name;
+	} else if (offset == dir->telldir_info[1].offset) {
+		dir->offset = offset;
+		dir->use_name = dir->telldir_info[1].use_name;
+		dir->prev_readdir_name = dir->telldir_info[1].name;
+	} else {
+		// We are seeking to a location for which we don't have corresponding name, we fall back to
+		// using offset as the marker, this could lead to inconsistency if files were deleted in the directory
+		// after getting the offset from telldir().
+		// This should not happen in case of samba requests!
+		DEBUG(3, ("vfs_proxyfs_seekdir: %s offset : %ld seeking to a location we are not tracking by name, could lead to readdir inconsistency\n", handle->conn->connectpath, offset));
+		dir->offset = offset;
+		dir->use_name = false;
+	}
 }
 
+/*
+ * The telldir() function returns the current location associated with the directory stream dirp.
+ *
+ * To follow posix description properly, we are supposed to maintain the readdir marker associated
+ * with every telldir offset we replied. So that a seekdir() to any of the previously returned telldir()
+ * location can properly be handled.
+ *
+ * Samba gets directory query info with a buffer to fill. Samba continuously reads on entry at a time and
+ * adds it to the buffer. When it encounters an entry that overflows the buffer, then samba will reply back
+ * to the query request and seekdir() back one entry so that the last read entry which could not be filled
+ * into the buffer will be re-read again for the subsequent request.
+ */
 static long vfs_proxyfs_telldir(struct vfs_handle_struct *handle, DIR *dirp)
 {
 	DEBUG(10, ("vfs_proxyfs_telldir: %s\n", handle->conn->connectpath));
 	file_handle_t *dir = (file_handle_t *)dirp;
+	dir->telldir_info[0] = dir->telldir_info[1];
+	strncpy(dir->telldir_info[1].name, dir->dir_ent.d_name, NAME_MAX);
+	dir->telldir_info[1].offset = dir->offset;
+	dir->telldir_info[1].use_name = dir->use_name;
+
 	return dir->offset;
 }
 
@@ -495,6 +558,7 @@ static void vfs_proxyfs_rewinddir(struct vfs_handle_struct *handle,
 	DEBUG(10, ("vfs_proxyfs_rewinddir: %s\n", handle->conn->connectpath));
 	file_handle_t *dir = (file_handle_t *)dirp;
 	dir->offset = 0;
+	dir->use_name = false; // Subsequent readdir should use offset instead of name as the next entry marker.
 }
 
 static int vfs_proxyfs_mkdir(struct vfs_handle_struct *handle,
@@ -1226,7 +1290,7 @@ static int vfs_proxyfs_fsync_recv_4_4(struct tevent_req *req,
 }
 #endif
 
-// TBD: How do we handle stat of symbolic link. Currently we are not resolving 
+// TBD: How do we handle stat of symbolic link. Currently we are not resolving
 // symlink inode to target inode and then doing stat on it. stat behavior is same as
 // lstat behavior for symbolic link.
 
@@ -1931,9 +1995,35 @@ static int vfs_proxyfs_get_real_filename(struct vfs_handle_struct *handle,
                                          TALLOC_CTX *mem_ctx, char **found_name)
 {
 	DEBUG(10, ("vfs_proxyfs_get_real_filename: %s\n", path));
-	errno = ENOTSUP;
-	return -1;
 
+	if (strlen(name) >= NAME_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+
+	if ((strlen(path) + strlen(name) + 2) > PATH_MAX) {
+		errno = ENAMETOOLONG;
+		return -1;
+	}
+
+	char full_path[PATH_MAX];
+	snprintf(full_path, PATH_MAX, "%s/%s", path, name);
+	char *rpath = resolve_path(handle, full_path);
+	uint64_t ino;
+
+	int err = proxyfs_lookup_path(MOUNT_HANDLE(handle), rpath, &ino);
+	free(rpath);
+	if (err == -1) {
+		return -1;
+	}
+
+	*found_name = talloc_strdup(mem_ctx, name);
+	if (found_name[0] == NULL) {
+		errno = ENOMEM;
+		return -1;
+	}
+
+	return 0;
 }
 
 static const char *vfs_proxyfs_connectpath(struct vfs_handle_struct *handle,

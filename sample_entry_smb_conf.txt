@@ -1,10 +1,11 @@
-
 [global]
+      workgroup =
+      security = user
+      passdb backend = tdbsam
       proxyfs:PrivateIPAddr = 127.0.0.1
       proxyfs:TCPPort = 12345
       proxyfs:FastTCPPort = 32345
 
-# ProxyFS Share:
 [proxyfs]
       comment = ProxyFS test volume
       path = /mnt/CommonVolume
@@ -20,4 +21,7 @@
       level2 oplocks = False
       aio read size = 1
       aio write size = 1
-
+      case sensitive = yes
+      preserve case = yes
+      short preserve case = yes
+      strict sync = yes
