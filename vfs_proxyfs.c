@@ -858,7 +858,7 @@ typedef struct vfs_proxyfs_tevent_status_s {
 	size_t                  length;
 } vfs_proxyfs_tevent_status_t;
 
-static void proxyfs_io_done_callback(proxyfs_io_request_t *pfs_io)
+static void proxyfs_done_callback(proxyfs_io_request_t *pfs_io)
 {
 	struct tevent_req *req = (struct tevent_req *)pfs_io->done_cb_arg;
 
@@ -951,11 +951,11 @@ static struct tevent_req *vfs_proxyfs_pread_send(struct vfs_handle_struct *handl
 	pfs_io->offset = offset;
 	pfs_io->length = n;
 	pfs_io->data = data;
-	pfs_io->done_cb = proxyfs_io_done_callback;
+	pfs_io->done_cb = proxyfs_done_callback;
 	pfs_io->done_cb_arg = (void *)req;
 	pfs_io->done_cb_fd = write_fd;
 
-	int ret = proxyfs_async_io_send(pfs_io);
+	int ret = proxyfs_async_send(pfs_io);
 	if (ret < 0) {
 		talloc_free(req);
 		errno = ret;
@@ -1101,11 +1101,11 @@ static struct tevent_req *vfs_proxyfs_pwrite_send(struct vfs_handle_struct *hand
 	pfs_io->offset = offset;
 	pfs_io->length = n;
 	pfs_io->data = (void *)data;
-	pfs_io->done_cb = proxyfs_io_done_callback;
+	pfs_io->done_cb = proxyfs_done_callback;
 	pfs_io->done_cb_arg = (void *)req;
 	pfs_io->done_cb_fd = write_fd;
 
-	int ret = proxyfs_async_io_send(pfs_io);
+	int ret = proxyfs_async_send(pfs_io);
 	if (ret < 0) {
 		talloc_free(req);
 		errno = ret;
@@ -1265,28 +1265,65 @@ static struct tevent_req *vfs_proxyfs_fsync_send(struct vfs_handle_struct *handl
                                                  struct tevent_context *ev,
                                                  struct files_struct *fsp)
 {
-	DEBUG(10, ("vfs_proxyfs_fsync_send: %s\n", fsp->fsp_name->base_name));
+	proxyfs_io_request_t *pfs_io = NULL;
+	file_handle_t *fd;
 
-	errno = ENOTSUP;
-	return NULL;
+	fd = *(file_handle_t **)VFS_FETCH_FSP_EXTENSION(handle, fsp);
+	if (fd ==  NULL) {
+		errno = EINVAL;
+		return NULL;
+	}
+
+	DEBUG(10, ("vfs_proxyfs_fsync_send: %s inum=%ld \n", fsp->fsp_name->base_name, fd->inum));
+
+	struct tevent_req *req = tevent_req_create(mem_ctx, &pfs_io, proxyfs_io_request_t);
+	if (req == NULL) {
+		return NULL;
+	}
+
+	if (!init_proxyfs_aio(handle)) {
+		talloc_free(req);
+		errno = EIO;
+		return NULL;
+	}
+
+	pfs_io->op = IO_FLUSH;
+	pfs_io->mount_handle = MOUNT_HANDLE(handle);
+	pfs_io->inode_number = fd->inum;
+
+	pfs_io->done_cb = proxyfs_done_callback;
+	pfs_io->done_cb_arg = (void *)req;
+	pfs_io->done_cb_fd = write_fd;
+
+	int ret = proxyfs_async_send(pfs_io);
+	if (ret < 0) {
+		talloc_free(req);
+		errno = ret;
+		return NULL;
+	}
+
+	return req;
 }
 
 static int vfs_proxyfs_fsync_recv(struct tevent_req *req,
                                   int *err)
 {
-	DEBUG(10, ("vfs_proxyfs_fsync_recv: \n"));
+	proxyfs_io_request_t *pfs_io = tevent_req_data(req, proxyfs_io_request_t);
+	if (pfs_io == NULL) {
+		return -1;
+	}
 
-	errno = ENOTSUP;
-	return -1;
+	DEBUG(10, ("vfs_proxyfs_fsync_recv: inum=%lu \n", pfs_io->inode_number));
+
+	*err = pfs_io->error;
+	return 0;
 }
 
 #if SAMBA_VERSION_MINOR >= 5
 static int vfs_proxyfs_fsync_recv_4_4(struct tevent_req *req,
                                   struct vfs_aio_state *state)
 {
-	DEBUG(10, ("vfs_proxyfs_fsync_recv: \n"));
-	errno = ENOTSUP;
-	return -1;
+	return vfs_proxyfs_fsync_recv(req, &state->error);
 }
 #endif
 
