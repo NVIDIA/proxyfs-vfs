@@ -1,8 +1,9 @@
 CC           = gcc
 CFLAGS       = -g -Os -fPIC
 INSTALLCMD   = /usr/bin/install -c
-LDFLAGS      = -lproxyfs
+LDFLAGS      =
 LDSHFLAGS    = -shared
+PROXYFSDOTSO = ../jrpcclient/libproxyfs.so
 
 ifneq ($(MAKECMDGOALS),clean)
 ifndef SAMBA_PATH
@@ -33,7 +34,7 @@ all: proxyfs.so
 
 proxyfs.so: vfs_proxyfs.o
 	@echo "Linking $@"
-	$(CC)  -o $@ $< $(LDSHFLAGS) $(LDINCFLAGS) $(LDFLAGS)
+	$(CC)  -o $@ $< $(LDSHFLAGS) $(PROXYFSDOTSO) $(LDINCFLAGS) $(LDFLAGS)
 
 install:
 	$(INSTALLCMD) -d $(VFS_LIBDIR)
