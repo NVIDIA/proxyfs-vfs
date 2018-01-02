@@ -15,6 +15,7 @@ FLAGS = $(CFLAGS) -I$(SAMBA_PATH) -I$(SAMBA_PATH)/source3 -I$(SAMBA_PATH)/source
 # proxyfs rpc library proxfs.h header file.
 ifdef PROXYFS_RPC_INCLUDE
 FLAGS += -I$(PROXYFS_RPC_INCLUDE)
+LDINCFLAGS = -L$(PROXYFS_RPC_INCLUDE)
 endif
 endif
 
@@ -32,7 +33,7 @@ all: proxyfs.so
 
 proxyfs.so: vfs_proxyfs.o
 	@echo "Linking $@"
-	$(CC)  -o $@ $< $(LDSHFLAGS) $(LDFLAGS)
+	$(CC)  -o $@ $< $(LDSHFLAGS) $(LDINCFLAGS) $(LDFLAGS)
 
 install:
 	$(INSTALLCMD) -d $(VFS_LIBDIR)
