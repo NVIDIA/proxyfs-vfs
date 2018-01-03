@@ -1,29 +1,22 @@
-CC           = gcc
-CFLAGS       = -g -Os -fPIC
-INSTALLCMD   = /usr/bin/install -c
-LDFLAGS      =
-LDSHFLAGS    = -shared
-PROXYFSDOTSO = ../jrpcclient/libproxyfs.so
+CC            = gcc
+CFLAGS        = -g -Os -fPIC
+INSTALLCMD    = /usr/bin/install -c
+LDFLAGS       = -shared
+JRPCCLIENTDIR = ../jrpcclient
 
-ifneq ($(MAKECMDGOALS),clean)
+PROXYFSDOTSO  = $(JRPCCLIENTDIR)/libproxyfs.so
+
 ifndef SAMBA_PATH
 SAMBA_PATH := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))/samba
 endif
+
 include $(SAMBA_PATH)/VERSION
-FLAGS = $(CFLAGS) -I$(SAMBA_PATH) -I$(SAMBA_PATH)/source3 -I$(SAMBA_PATH)/source3/include -I$(SAMBA_PATH)/lib/talloc -I$(SAMBA_PATH)/lib/tevent -I$(SAMBA_PATH)/lib/replace -I$(SAMBA_PATH)/bin/default -I$(SAMBA_PATH)/bin/default/include -I.
+FLAGS = $(CFLAGS) -I$(JRPCCLIENTDIR) -I$(SAMBA_PATH) -I$(SAMBA_PATH)/source3 -I$(SAMBA_PATH)/source3/include -I$(SAMBA_PATH)/lib/talloc -I$(SAMBA_PATH)/lib/tevent -I$(SAMBA_PATH)/lib/replace -I$(SAMBA_PATH)/bin/default -I$(SAMBA_PATH)/bin/default/include
 
-# In case the user wants vfs module to be build without proxyfs rpc client installed, can supply the path to
-# proxyfs rpc library proxfs.h header file.
-ifdef PROXYFS_RPC_INCLUDE
-FLAGS += -I$(PROXYFS_RPC_INCLUDE)
-LDINCFLAGS = -L$(PROXYFS_RPC_INCLUDE)
-endif
-endif
+DEPS = vfs_proxyfs.h
 
-DEPS         = vfs_proxyfs.h
-
-VFS_CENTOS_LIBDIR   ?= /usr/lib64/samba/vfs
-VFS_LIBDIR   ?= /usr/lib/x86_64-linux-gnu/samba/vfs
+VFS_CENTOS_LIBDIR ?= /usr/lib64/samba/vfs
+VFS_LIBDIR ?= /usr/lib/x86_64-linux-gnu/samba/vfs
 
 all: proxyfs.so
 
@@ -34,7 +27,7 @@ all: proxyfs.so
 
 proxyfs.so: vfs_proxyfs.o
 	@echo "Linking $@"
-	$(CC)  -o $@ $< $(LDSHFLAGS) $(PROXYFSDOTSO) $(LDINCFLAGS) $(LDFLAGS)
+	$(CC)  -o $@ $< $(LDFLAGS) $(PROXYFSDOTSO)
 
 install:
 	$(INSTALLCMD) -d $(VFS_LIBDIR)
