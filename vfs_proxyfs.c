@@ -25,9 +25,9 @@
 #include <sys/types.h>
 #include <pwd.h>
 
-#include "includes.h"
-#include "smbd/smbd.h"
-#include "bin/default/librpc/gen_ndr/ndr_smb_acl.h"
+#include <includes.h>
+#include <smbd/smbd.h>
+#include <bin/default/librpc/gen_ndr/ndr_smb_acl.h>
 
 #include "vfs_proxyfs.h"
 
