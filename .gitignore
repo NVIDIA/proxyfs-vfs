@@ -1,3 +1,4 @@
-samba*
+samba
+samba*/
 *.o
 *.so
