@@ -53,6 +53,9 @@ const char*vfs_proxyfs_PrivateIPAddr; // [global]proxyfs:PrivateIPAddr
 int vfs_proxyfs_TCPPort;              // [global]proxyfs:TCPPort
 int vfs_proxyfs_FastTCPPort;          // [global]proxyfs:FastTCPPort
 
+const char *vfs_proxyfs_SwiftIPAddr;  // [global]proxyfs:SwiftIPAddr
+int vfs_proxyfs_SwiftTCPPort;         // [global]proxyfs:SwiftTCPPort
+
 char *resolve_path(struct vfs_handle_struct *handle,
                           const char *path)
 {
@@ -2930,6 +2933,9 @@ NTSTATUS vfs_proxyfs_init(void)
 	vfs_proxyfs_TCPPort       = lp_parm_int(-1,"proxyfs","TCPPort",0);
 	vfs_proxyfs_FastTCPPort   = lp_parm_int(-1,"proxyfs","FastTCPPort",0);
 
+	vfs_proxyfs_SwiftIPAddr   = lp_parm_const_string(-1,"proxyfs","SwiftIPAddr","127.0.0.1");
+	vfs_proxyfs_SwiftTCPPort  = lp_parm_int(-1, "proxyfs","SwiftTCPPort",8090);
+
 	// TODO: Replace below here once SSController populates smb.conf (and above annotated #include's)
 
 	if (0 == vfs_proxyfs_TCPPort) {
@@ -2962,7 +2968,8 @@ NTSTATUS vfs_proxyfs_init(void)
 		rpc_config_parse(rpc_config_str);
 		free(rpc_config_str);
 	} else {
-		rpc_config_set(vfs_proxyfs_PrivateIPAddr, vfs_proxyfs_TCPPort, vfs_proxyfs_FastTCPPort);
+		rpc_config_set(vfs_proxyfs_PrivateIPAddr, vfs_proxyfs_TCPPort, vfs_proxyfs_FastTCPPort,
+		               vfs_proxyfs_SwiftIPAddr, vfs_proxyfs_SwiftTCPPort);
 	}
 
 	// TODO: Replace above here once SSController populates smb.conf with
