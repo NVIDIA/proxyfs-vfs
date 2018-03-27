@@ -223,7 +223,10 @@ static int vfs_proxyfs_connect(struct vfs_handle_struct *handle,
 
 	ctx->readonly = handle->conn->read_only;
 
-	uint64_t mount_option = ctx->readonly ? 1 : 0;
+	uint64_t mount_option = ctx->readonly ? OPT_READ_ONLY : 0;
+
+	int direct_io = lp_parm_int(SNUM(handle->conn), "proxyfs", "directIO", 1);
+	mount_option |= direct_io ? OPT_DIRECT_IO_READ : 0;
 
 	DEBUG(10, ("vfs_proxyfs_connect: Volume : %s Connection_path %s Service %s user %s\n", ctx->volume, handle->conn->connectpath, service, user));
 
