@@ -228,6 +228,13 @@ static int vfs_proxyfs_connect(struct vfs_handle_struct *handle,
 	int direct_io = lp_parm_int(SNUM(handle->conn), "proxyfs", "directIO", 1);
 	mount_option |= direct_io ? OPT_DIRECT_IO_READ : 0;
 
+	int read_io_type = 	lp_parm_int(SNUM(handle->conn), "proxyfs", "readType", 1); // 1: No Cache, 2: Seg Cache, 3: File Cache
+	switch (read_io_type) {
+	case 1: mount_option |= OPT_READ_NO_CACHE; break;
+	case 2: mount_option |= OPT_READ_SEG_CACHE; break;
+	case 3: mount_option |= OPT_READ_FILE_CACHE; break;
+	}
+
 	DEBUG(10, ("vfs_proxyfs_connect: Volume : %s Connection_path %s Service %s user %s\n", ctx->volume, handle->conn->connectpath, service, user));
 
 	err = proxyfs_mount((char *)ctx->volume, mount_option, geteuid(), getegid(), &ctx->mnt_handle);
