@@ -1,3 +1,6 @@
+// Copyright (c) 2015-2021, NVIDIA CORPORATION.
+// SPDX-License-Identifier: Apache-2.0
+
 #ifndef __VFS_PROXYFS_H__
 #define __VFS_PROXYFS_H__
 
